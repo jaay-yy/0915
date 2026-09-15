@@ -9,7 +9,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 DATABASE = "memo_service.db"
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
-ADMIN_MEMO_CONTENT = "SBOB{admin_only_seed_memo}"
+CHALLENGE_FLAG = "SBOB{1234567890qwertyuiop}"
 
 app = Flask(__name__)
 # In production, always set SECRET_KEY to a long, unpredictable value.
@@ -22,18 +22,81 @@ BASE_HTML = """
 <html lang="ko">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>간단한 메모 서비스</title>
+  <style>
+    :root { --blue: #1d4ed8; --blue-dark: #163b9d; --ink: #111827; --muted: #667085; --line: #d9e1ee; --surface: #ffffff; --page: #f4f7fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; font-size: 16px; line-height: 1.6; }
+    a { color: inherit; text-decoration: none; }
+    .site-header { background: var(--surface); border-bottom: 1px solid var(--line); }
+    .header-inner { width: min(920px, calc(100% - 32px)); min-height: 72px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { color: var(--blue); font-size: 25px; font-weight: 900; letter-spacing: -1.5px; }
+    .brand-mark { display: inline-grid; width: 28px; height: 28px; margin-right: 7px; place-items: center; border-radius: 8px; background: var(--blue); color: #fff; font-size: 17px; vertical-align: -2px; }
+    .global-nav { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 14px; font-weight: 700; }
+    .global-nav a:hover { color: var(--blue-dark); }
+    .page-shell { width: min(920px, calc(100% - 32px)); margin: 32px auto 56px; }
+    .content-card { padding: 32px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 3px 12px rgba(0, 0, 0, .035); }
+    h1, h2 { margin: 0; letter-spacing: -1px; line-height: 1.3; }
+    h2 { font-size: 25px; }
+    p { margin: 12px 0; }
+    .kicker { margin: 0 0 5px; color: var(--blue-dark); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .dashboard-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .action-link, button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; padding: 9px 16px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; font: inherit; font-weight: 800; }
+    .action-link:hover, button:hover { background: var(--blue-dark); }
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid rgba(29, 78, 216, .28); outline-offset: 2px; }
+    .flash-list { margin: 0 0 16px; padding: 12px 16px 12px 34px; border-radius: 10px; background: #eff6ff; color: #1e40af; font-weight: 700; }
+    .memo-list { margin: 16px 0 0; padding: 0; list-style: none; }
+    .memo-list li { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; transition: border-color .15s, box-shadow .15s; }
+    .memo-list li:hover { border-color: #9ab7f3; box-shadow: 0 4px 10px rgba(29, 78, 216, .08); }
+    .memo-list a { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 16px; font-weight: 800; }
+    .memo-list time { flex: none; color: var(--muted); font-size: 13px; font-weight: 500; }
+    .stack-form { max-width: 640px; margin-top: 22px; }
+    .stack-form p { margin: 18px 0; }
+    label { display: block; font-size: 14px; font-weight: 800; }
+    input, textarea { width: 100%; margin-top: 7px; padding: 11px 12px; border: 1px solid #cfd4da; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-weight: 400; }
+    textarea { min-height: 180px; resize: vertical; }
+    .sub-link { display: inline-block; margin-top: 18px; color: var(--muted); font-size: 14px; font-weight: 700; }
+    .sub-link:hover { color: var(--blue-dark); text-decoration: underline; }
+    .memo-detail { max-width: 720px; }
+    .memo-meta { color: var(--muted); font-size: 14px; }
+    .memo-body { margin: 24px 0; padding: 20px; border-radius: 10px; background: #f8faf9; white-space: pre-wrap; font: inherit; }
+    .detail-actions { display: flex; gap: 10px; align-items: center; }
+    .detail-actions form { margin: 0; }
+    .button-secondary { background: #eaf1ff; color: #1e40af; }
+    .button-danger { background: #f04452; }
+    table { width: 100%; margin-top: 22px; border-collapse: collapse; font-size: 15px; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { background: #f8faf9; color: var(--muted); font-size: 13px; }
+    @media (max-width: 600px) { .header-inner { min-height: 62px; } .global-nav { gap: 10px; font-size: 13px; } .page-shell { margin-top: 16px; } .content-card { padding: 22px 18px; border-radius: 12px; } .dashboard-heading { display: block; } .dashboard-heading .action-link { margin-top: 16px; } .memo-list a { align-items: flex-start; flex-direction: column; gap: 2px; } }
+  </style>
 </head>
 <body>
-  <h1>간단한 메모 서비스</h1>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <ul>
-      {% for message in messages %}<li>{{ message }}</li>{% endfor %}
-      </ul>
-    {% endif %}
-  {% endwith %}
-  {{ content|safe }}
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">M</span>메모온</a>
+      <nav class="global-nav" aria-label="주요 메뉴">
+        {% if session.get('user_id') %}
+          <a href="{{ url_for('index') }}">내 메모</a>
+          <a href="{{ url_for('create_memo') }}">새 메모</a>
+          <form action="{{ url_for('logout') }}" method="post"><button type="submit">로그아웃</button></form>
+        {% else %}
+          <a href="{{ url_for('login') }}">로그인</a>
+          <a href="{{ url_for('register') }}">회원가입</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="page-shell">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul class="flash-list">
+        {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    <section class="content-card">{{ content|safe }}</section>
+  </main>
 </body>
 </html>
 """
@@ -97,14 +160,19 @@ def init_db():
             admin_id = admin["id"]
             db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin_id,))
 
-        seeded_memo = db.execute(
+        # Remove only the old app-generated seed record, not user-authored memos.
+        db.execute(
+            "DELETE FROM memos WHERE user_id = ? AND title = ?",
+            (admin_id, "운영 기록"),
+        )
+        flag_memo = db.execute(
             "SELECT id FROM memos WHERE user_id = ? AND content = ?",
-            (admin_id, ADMIN_MEMO_CONTENT),
+            (admin_id, CHALLENGE_FLAG),
         ).fetchone()
-        if seeded_memo is None:
+        if flag_memo is None:
             db.execute(
                 "INSERT INTO memos (user_id, title, content) VALUES (?, ?, ?)",
-                (admin_id, "관리자 전용 메모", ADMIN_MEMO_CONTENT),
+                (admin_id, "주간 점검", CHALLENGE_FLAG),
             )
         db.commit()
 
@@ -157,6 +225,23 @@ def get_memo_or_404(memo_id):
     return memo
 
 
+@app.route("/robots.txt")
+def robots():
+    return "User-agent: *\nDisallow: /api/memos/\n", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route("/api/memos/<int:memo_id>/preview")
+@login_required
+def memo_preview(memo_id):
+    """Return a compact memo preview."""
+    memo = get_db().execute(
+        "SELECT id, title, content FROM memos WHERE id = ?", (memo_id,)
+    ).fetchone()
+    if memo is None:
+        abort(404)
+    return {"id": memo["id"], "title": memo["title"], "content": memo["content"]}
+
+
 @app.route("/")
 @login_required
 def index():
@@ -166,22 +251,23 @@ def index():
     ).fetchall()
     return page(
         """
-        <p>{{ username }}님, 로그인되었습니다.</p>
-        <p><a href="{{ url_for('create_memo') }}">새 메모 작성</a></p>
-        {% if is_admin %}<p><a href="{{ url_for('admin_users') }}">관리자 페이지</a></p>{% endif %}
-        <h2>내 메모</h2>
+        <div class="dashboard-heading">
+          <div>
+            <p class="kicker">MY NOTES</p>
+            <h2>{{ username }}님의 메모</h2>
+          </div>
+          <a class="action-link" href="{{ url_for('create_memo') }}">+ 새 메모 작성</a>
+        </div>
+        {% if is_admin %}<p><a class="sub-link" href="{{ url_for('admin_users') }}">관리자 페이지</a></p>{% endif %}
         {% if memos %}
-          <ul>
+          <ul class="memo-list">
           {% for memo in memos %}
-            <li><a href="{{ url_for('memo_detail', memo_id=memo['id']) }}">{{ memo['title'] }}</a> ({{ memo['created_at'] }})</li>
+            <li><a href="{{ url_for('memo_detail', memo_id=memo['id']) }}"><span>{{ memo['title'] }}</span><time>{{ memo['created_at'] }}</time></a></li>
           {% endfor %}
           </ul>
         {% else %}
-          <p>작성한 메모가 없습니다.</p>
+          <p>아직 작성한 메모가 없습니다. 첫 메모를 남겨보세요.</p>
         {% endif %}
-        <form action="{{ url_for('logout') }}" method="post">
-          <button type="submit">로그아웃</button>
-        </form>
         """,
         username=session["username"],
         memos=memos,
@@ -197,8 +283,9 @@ def admin_users():
     ).fetchall()
     return page(
         """
-        <h2>관리자 페이지 - 전체 회원</h2>
-        <table border="1">
+        <p class="kicker">ADMIN</p>
+        <h2>전체 회원 목록</h2>
+        <table>
           <tr><th>ID</th><th>사용자 이름</th><th>권한</th></tr>
           {% for user in users %}
             <tr>
@@ -208,7 +295,7 @@ def admin_users():
             </tr>
           {% endfor %}
         </table>
-        <p><a href="{{ url_for('index') }}">내 메모 목록으로</a></p>
+        <p><a class="sub-link" href="{{ url_for('index') }}">내 메모 목록으로</a></p>
         """,
         users=users,
     )
@@ -237,13 +324,14 @@ def create_memo():
 
     return page(
         """
-        <h2>새 메모</h2>
-        <form method="post">
+        <p class="kicker">WRITE</p>
+        <h2>새 메모 작성</h2>
+        <form class="stack-form" method="post">
           <p><label>제목 <input name="title" maxlength="100" required></label></p>
           <p><label>내용<br><textarea name="content" rows="10" cols="50" required></textarea></label></p>
           <button type="submit">저장</button>
         </form>
-        <p><a href="{{ url_for('index') }}">목록으로</a></p>
+        <p><a class="sub-link" href="{{ url_for('index') }}">목록으로</a></p>
         """
     )
 
@@ -254,15 +342,19 @@ def memo_detail(memo_id):
     memo = get_memo_or_404(memo_id)
     return page(
         """
-        <h2>{{ memo['title'] }}</h2>
-        <p>작성: {{ memo['created_at'] }}</p>
-        <p>수정: {{ memo['updated_at'] }}</p>
-        <pre>{{ memo['content'] }}</pre>
-        <p><a href="{{ url_for('edit_memo', memo_id=memo['id']) }}">수정</a></p>
-        <form action="{{ url_for('delete_memo', memo_id=memo['id']) }}" method="post">
-          <button type="submit">삭제</button>
-        </form>
-        <p><a href="{{ url_for('index') }}">목록으로</a></p>
+        <article class="memo-detail">
+          <p class="kicker">NOTE</p>
+          <h2>{{ memo['title'] }}</h2>
+          <p class="memo-meta">작성 {{ memo['created_at'] }} · 수정 {{ memo['updated_at'] }}</p>
+          <pre class="memo-body">{{ memo['content'] }}</pre>
+          <div class="detail-actions">
+            <a class="action-link button-secondary" href="{{ url_for('edit_memo', memo_id=memo['id']) }}">수정</a>
+            <form action="{{ url_for('delete_memo', memo_id=memo['id']) }}" method="post">
+              <button class="button-danger" type="submit">삭제</button>
+            </form>
+          </div>
+          <p><a class="sub-link" href="{{ url_for('index') }}">목록으로</a></p>
+        </article>
         """,
         memo=memo,
     )
@@ -296,13 +388,14 @@ def edit_memo(memo_id):
 
     return page(
         """
+        <p class="kicker">EDIT</p>
         <h2>메모 수정</h2>
-        <form method="post">
+        <form class="stack-form" method="post">
           <p><label>제목 <input name="title" value="{{ memo['title'] }}" maxlength="100" required></label></p>
           <p><label>내용<br><textarea name="content" rows="10" cols="50" required>{{ memo['content'] }}</textarea></label></p>
           <button type="submit">저장</button>
         </form>
-        <p><a href="{{ url_for('memo_detail', memo_id=memo['id']) }}">상세로</a></p>
+        <p><a class="sub-link" href="{{ url_for('memo_detail', memo_id=memo['id']) }}">상세로</a></p>
         """,
         memo=memo,
     )
@@ -348,13 +441,14 @@ def register():
 
     return page(
         """
+        <p class="kicker">JOIN</p>
         <h2>회원가입</h2>
-        <form method="post">
+        <form class="stack-form" method="post">
           <p><label>사용자 이름 <input name="username" required></label></p>
           <p><label>비밀번호 <input type="password" name="password" required></label></p>
           <button type="submit">가입하기</button>
         </form>
-        <p><a href="{{ url_for('login') }}">로그인</a></p>
+        <p><a class="sub-link" href="{{ url_for('login') }}">이미 계정이 있나요? 로그인</a></p>
         """
     )
 
@@ -381,13 +475,14 @@ def login():
 
     return page(
         """
+        <p class="kicker">WELCOME</p>
         <h2>로그인</h2>
-        <form method="post">
+        <form class="stack-form" method="post">
           <p><label>사용자 이름 <input name="username" required></label></p>
           <p><label>비밀번호 <input type="password" name="password" required></label></p>
           <button type="submit">로그인</button>
         </form>
-        <p><a href="{{ url_for('register') }}">회원가입</a></p>
+        <p><a class="sub-link" href="{{ url_for('register') }}">처음이신가요? 회원가입</a></p>
         """
     )
 
