@@ -6,7 +6,7 @@ from flask import abort, Flask, flash, g, redirect, render_template_string, requ
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
-DATABASE = "memo_service.db"
+DATABASE = os.environ.get("DATABASE", "memo_service.db")
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
 CHALLENGE_FLAG = "SBOB{1234567890qwertyuiop}"
@@ -42,6 +42,8 @@ BASE_HTML = """
     p { margin: 12px 0; }
     .kicker { margin: 0 0 5px; color: var(--blue-dark); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
     .dashboard-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .admin-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 22px 0; padding: 15px 16px; border: 1px solid #b8cdf6; border-radius: 10px; background: #f5f8ff; }
+    .admin-shortcut strong { color: var(--blue-dark); }
     .action-link, button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; padding: 9px 16px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; cursor: pointer; font: inherit; font-weight: 800; }
     .action-link:hover, button:hover { background: var(--blue-dark); }
     button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid rgba(29, 78, 216, .28); outline-offset: 2px; }
@@ -68,7 +70,7 @@ BASE_HTML = """
     table { width: 100%; margin-top: 22px; border-collapse: collapse; font-size: 15px; }
     th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; }
     th { background: #f8faf9; color: var(--muted); font-size: 13px; }
-    @media (max-width: 600px) { .header-inner { min-height: 62px; } .global-nav { gap: 10px; font-size: 13px; } .page-shell { margin-top: 16px; } .content-card { padding: 22px 18px; border-radius: 12px; } .dashboard-heading { display: block; } .dashboard-heading .action-link { margin-top: 16px; } .memo-list a { align-items: flex-start; flex-direction: column; gap: 2px; } }
+    @media (max-width: 600px) { .header-inner { min-height: 62px; } .global-nav { gap: 10px; font-size: 13px; } .page-shell { margin-top: 16px; } .content-card { padding: 22px 18px; border-radius: 12px; } .dashboard-heading, .admin-shortcut { display: block; } .dashboard-heading .action-link, .admin-shortcut .action-link { margin-top: 16px; } .memo-list a { align-items: flex-start; flex-direction: column; gap: 2px; } }
   </style>
 </head>
 <body>
@@ -258,7 +260,12 @@ def index():
           </div>
           <a class="action-link" href="{{ url_for('create_memo') }}">+ 새 메모 작성</a>
         </div>
-        {% if is_admin %}<p><a class="sub-link" href="{{ url_for('admin_users') }}">관리자 페이지</a></p>{% endif %}
+        {% if is_admin %}
+          <div class="admin-shortcut">
+            <strong>관리자 전용 메뉴</strong>
+            <a class="action-link" href="{{ url_for('admin_users') }}">전체 회원 목록 관리 →</a>
+          </div>
+        {% endif %}
         {% if memos %}
           <ul class="memo-list">
           {% for memo in memos %}
@@ -498,4 +505,5 @@ init_db()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+#   app.run(debug=True)
+    app.run(host="0.0.0.0", port=8000)

@@ -1,0 +1,8 @@
+.env
+.git
+.omx
+__pycache__/
+*.py[cod]
+*.sqlite3
+memo_service.db
+data/

@@ -41,7 +41,7 @@
 
 ## Components
 - Existing components to reuse: Flask 인라인 템플릿의 표준 링크, 폼, 버튼
-- New/changed components: 앱 헤더, 카드 컨테이너, 메모 목록 카드, 폼 필드, 알림, 데이터 표
+- New/changed components: 앱 헤더, 관리자 바로가기 버튼, 카드 컨테이너, 메모 목록 카드, 폼 필드, 알림, 데이터 표
 - Variants and states: 기본/hover/focus 버튼, 빈 메모 목록, 성공·오류 알림
 - Token/component ownership: `app.py`의 `BASE_HTML` CSS가 공통 스타일을 소유
 
