@@ -2,7 +2,7 @@ import os
 import sqlite3
 from functools import wraps
 
-from flask import Flask, flash, g, redirect, render_template_string, request, session, url_for
+from flask import abort, Flask, flash, g, redirect, render_template_string, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -63,6 +63,19 @@ def init_db():
             )
             """
         )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+            """
+        )
         db.commit()
 
 
@@ -81,19 +94,150 @@ def page(content, **context):
     return render_template_string(BASE_HTML, content=render_template_string(content, **context))
 
 
+def get_memo_or_404(memo_id):
+    """Return a memo only when it belongs to the signed-in user."""
+    memo = get_db().execute(
+        "SELECT id, title, content, created_at, updated_at FROM memos WHERE id = ? AND user_id = ?",
+        (memo_id, session["user_id"]),
+    ).fetchone()
+    if memo is None:
+        abort(404)
+    return memo
+
+
 @app.route("/")
 @login_required
 def index():
+    memos = get_db().execute(
+        "SELECT id, title, created_at FROM memos WHERE user_id = ? ORDER BY id DESC",
+        (session["user_id"],),
+    ).fetchall()
     return page(
         """
         <p>{{ username }}님, 로그인되었습니다.</p>
-        <p>메모 기능은 다음 단계에서 추가할 수 있습니다.</p>
+        <p><a href="{{ url_for('create_memo') }}">새 메모 작성</a></p>
+        <h2>내 메모</h2>
+        {% if memos %}
+          <ul>
+          {% for memo in memos %}
+            <li><a href="{{ url_for('memo_detail', memo_id=memo['id']) }}">{{ memo['title'] }}</a> ({{ memo['created_at'] }})</li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <p>작성한 메모가 없습니다.</p>
+        {% endif %}
         <form action="{{ url_for('logout') }}" method="post">
           <button type="submit">로그아웃</button>
         </form>
         """,
         username=session["username"],
+        memos=memos,
     )
+
+
+@app.route("/memos/new", methods=("GET", "POST"))
+@login_required
+def create_memo():
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        content = request.form.get("content", "").strip()
+
+        if not title or not content:
+            flash("제목과 내용을 모두 입력하세요.")
+        elif len(title) > 100:
+            flash("제목은 100자 이하여야 합니다.")
+        else:
+            db = get_db()
+            db.execute(
+                "INSERT INTO memos (user_id, title, content) VALUES (?, ?, ?)",
+                (session["user_id"], title, content),
+            )
+            db.commit()
+            flash("메모를 저장했습니다.")
+            return redirect(url_for("index"))
+
+    return page(
+        """
+        <h2>새 메모</h2>
+        <form method="post">
+          <p><label>제목 <input name="title" maxlength="100" required></label></p>
+          <p><label>내용<br><textarea name="content" rows="10" cols="50" required></textarea></label></p>
+          <button type="submit">저장</button>
+        </form>
+        <p><a href="{{ url_for('index') }}">목록으로</a></p>
+        """
+    )
+
+
+@app.route("/memos/<int:memo_id>")
+@login_required
+def memo_detail(memo_id):
+    memo = get_memo_or_404(memo_id)
+    return page(
+        """
+        <h2>{{ memo['title'] }}</h2>
+        <p>작성: {{ memo['created_at'] }}</p>
+        <p>수정: {{ memo['updated_at'] }}</p>
+        <pre>{{ memo['content'] }}</pre>
+        <p><a href="{{ url_for('edit_memo', memo_id=memo['id']) }}">수정</a></p>
+        <form action="{{ url_for('delete_memo', memo_id=memo['id']) }}" method="post">
+          <button type="submit">삭제</button>
+        </form>
+        <p><a href="{{ url_for('index') }}">목록으로</a></p>
+        """,
+        memo=memo,
+    )
+
+
+@app.route("/memos/<int:memo_id>/edit", methods=("GET", "POST"))
+@login_required
+def edit_memo(memo_id):
+    memo = get_memo_or_404(memo_id)
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        content = request.form.get("content", "").strip()
+
+        if not title or not content:
+            flash("제목과 내용을 모두 입력하세요.")
+        elif len(title) > 100:
+            flash("제목은 100자 이하여야 합니다.")
+        else:
+            db = get_db()
+            db.execute(
+                """
+                UPDATE memos
+                SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+                """,
+                (title, content, memo_id, session["user_id"]),
+            )
+            db.commit()
+            flash("메모를 수정했습니다.")
+            return redirect(url_for("memo_detail", memo_id=memo_id))
+
+    return page(
+        """
+        <h2>메모 수정</h2>
+        <form method="post">
+          <p><label>제목 <input name="title" value="{{ memo['title'] }}" maxlength="100" required></label></p>
+          <p><label>내용<br><textarea name="content" rows="10" cols="50" required>{{ memo['content'] }}</textarea></label></p>
+          <button type="submit">저장</button>
+        </form>
+        <p><a href="{{ url_for('memo_detail', memo_id=memo['id']) }}">상세로</a></p>
+        """,
+        memo=memo,
+    )
+
+
+@app.route("/memos/<int:memo_id>/delete", methods=("POST",))
+@login_required
+def delete_memo(memo_id):
+    get_memo_or_404(memo_id)
+    db = get_db()
+    db.execute("DELETE FROM memos WHERE id = ? AND user_id = ?", (memo_id, session["user_id"]))
+    db.commit()
+    flash("메모를 삭제했습니다.")
+    return redirect(url_for("index"))
 
 
 @app.route("/register", methods=("GET", "POST"))
