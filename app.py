@@ -7,6 +7,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 
 DATABASE = "memo_service.db"
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
+ADMIN_MEMO_CONTENT = "SBOB{admin_only_seed_memo}"
 
 app = Flask(__name__)
 # In production, always set SECRET_KEY to a long, unpredictable value.
@@ -63,6 +66,11 @@ def init_db():
             )
             """
         )
+        user_columns = {
+            column["name"] for column in db.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "is_admin" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS memos (
@@ -76,6 +84,28 @@ def init_db():
             )
             """
         )
+        admin = db.execute(
+            "SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,)
+        ).fetchone()
+        if admin is None:
+            cursor = db.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
+                (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD)),
+            )
+            admin_id = cursor.lastrowid
+        else:
+            admin_id = admin["id"]
+            db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin_id,))
+
+        seeded_memo = db.execute(
+            "SELECT id FROM memos WHERE user_id = ? AND content = ?",
+            (admin_id, ADMIN_MEMO_CONTENT),
+        ).fetchone()
+        if seeded_memo is None:
+            db.execute(
+                "INSERT INTO memos (user_id, title, content) VALUES (?, ?, ?)",
+                (admin_id, "관리자 전용 메모", ADMIN_MEMO_CONTENT),
+            )
         db.commit()
 
 
@@ -85,6 +115,28 @@ def login_required(view):
         if "user_id" not in session:
             flash("로그인이 필요합니다.")
             return redirect(url_for("login"))
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
+def is_current_user_admin():
+    if "user_id" not in session:
+        return False
+    user = get_db().execute(
+        "SELECT is_admin FROM users WHERE id = ?", (session["user_id"],)
+    ).fetchone()
+    return user is not None and user["is_admin"] == 1
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        if "user_id" not in session:
+            flash("로그인이 필요합니다.")
+            return redirect(url_for("login"))
+        if not is_current_user_admin():
+            abort(403)
         return view(*args, **kwargs)
 
     return wrapped_view
@@ -116,6 +168,7 @@ def index():
         """
         <p>{{ username }}님, 로그인되었습니다.</p>
         <p><a href="{{ url_for('create_memo') }}">새 메모 작성</a></p>
+        {% if is_admin %}<p><a href="{{ url_for('admin_users') }}">관리자 페이지</a></p>{% endif %}
         <h2>내 메모</h2>
         {% if memos %}
           <ul>
@@ -132,6 +185,32 @@ def index():
         """,
         username=session["username"],
         memos=memos,
+        is_admin=is_current_user_admin(),
+    )
+
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    users = get_db().execute(
+        "SELECT id, username, is_admin FROM users ORDER BY id ASC"
+    ).fetchall()
+    return page(
+        """
+        <h2>관리자 페이지 - 전체 회원</h2>
+        <table border="1">
+          <tr><th>ID</th><th>사용자 이름</th><th>권한</th></tr>
+          {% for user in users %}
+            <tr>
+              <td>{{ user['id'] }}</td>
+              <td>{{ user['username'] }}</td>
+              <td>{% if user['is_admin'] %}관리자{% else %}일반 사용자{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </table>
+        <p><a href="{{ url_for('index') }}">내 메모 목록으로</a></p>
+        """,
+        users=users,
     )
 
 
