@@ -7,6 +7,4 @@ services:
       - ./data:/app/data
     environment:
       DATABASE: /app/data/memo_service.db
-    env_file:
-      - .env
     restart: unless-stopped
