@@ -20,6 +20,3 @@ services:
       depends_on:
         - app
       restart: unless-stopped
-
-  volumes:
-    caddy_data:
