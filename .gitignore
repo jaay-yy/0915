@@ -1,1 +1,3 @@
 memo_service.db
+.env
+__pycache__/
