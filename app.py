@@ -190,6 +190,26 @@ def login_required(view):
     return wrapped_view
 
 
+def api_error(status, message):
+    return {"error": message}, status
+
+
+def api_login_required(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        user_id = session.get("user_id")
+        if user_id is None:
+            return api_error(401, "authentication required")
+
+        user = get_db().execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if user is None:
+            session.clear()
+            return api_error(401, "authentication required")
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
 def is_current_user_admin():
     if "user_id" not in session:
         return False
@@ -227,21 +247,67 @@ def get_memo_or_404(memo_id):
     return memo
 
 
-@app.route("/robots.txt")
-def robots():
-    return "User-agent: *\nDisallow: /api/memos/\n", 200, {"Content-Type": "text/plain; charset=utf-8"}
+def note_object(note):
+    return {
+        "id": note["id"],
+        "title": note["title"],
+        "body": note["content"],
+        "created_at": note["created_at"],
+        "updated_at": note["updated_at"],
+    }
 
 
-@app.route("/api/memos/<int:memo_id>/preview")
-@login_required
-def memo_preview(memo_id):
-    """Return a compact memo preview."""
-    memo = get_db().execute(
-        "SELECT id, title, content FROM memos WHERE id = ?", (memo_id,)
+@app.route("/api/notes", methods=("GET", "POST"))
+@api_login_required
+def api_notes():
+    db = get_db()
+    if request.method == "GET":
+        notes = db.execute(
+            """
+            SELECT id, title, content, created_at, updated_at
+            FROM memos WHERE user_id = ? ORDER BY id DESC
+            """,
+            (session["user_id"],),
+        ).fetchall()
+        return {"notes": [note_object(note) for note in notes]}
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return api_error(400, "JSON object with a title is required")
+
+    title = payload.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return api_error(400, "title is required")
+
+    body = payload.get("body", "")
+    if not isinstance(body, str):
+        return api_error(400, "body must be a string")
+
+    cursor = db.execute(
+        "INSERT INTO memos (user_id, title, content) VALUES (?, ?, ?)",
+        (session["user_id"], title.strip(), body),
+    )
+    db.commit()
+    note = db.execute(
+        "SELECT id, title, content, created_at, updated_at FROM memos WHERE id = ?",
+        (cursor.lastrowid,),
     ).fetchone()
-    if memo is None:
-        abort(404)
-    return {"id": memo["id"], "title": memo["title"], "content": memo["content"]}
+    return note_object(note), 201
+
+
+@app.route("/api/notes/<int:note_id>")
+@api_login_required
+def api_note_detail(note_id):
+    note = get_db().execute(
+        """
+        SELECT id, title, content, created_at, updated_at
+        FROM memos WHERE id = ? AND user_id = ?
+        """,
+        (note_id, session["user_id"]),
+    ).fetchone()
+    if note is None:
+        return api_error(404, "note not found")
+    return note_object(note)
 
 
 @app.route("/")
